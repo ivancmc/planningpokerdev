@@ -21,7 +21,7 @@ interface RoomData {
   status: "voting" | "revealing" | "revealed";
 }
 
-const FIBONACCI = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "?"];
+const FIBONACCI = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "55", "?", "☕"];
 
 export default function Room() {
   const { t } = useTranslation();
@@ -353,10 +353,10 @@ export default function Room() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Poker Table & Users */}
         <div className={clsx(
-          "space-y-6",
+          "space-y-6 h-full",
           currentUser?.isSpectator ? "lg:col-span-3" : "lg:col-span-2"
         )}>
-          <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 min-h-[400px] flex flex-col transition-colors duration-200">
+          <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 min-h-[400px] h-full flex flex-col transition-colors duration-200">
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">{t("table")}</h2>
               {isCreator && (
@@ -476,8 +476,8 @@ export default function Room() {
 
         {/* Right Column: Cards Selection */}
         {!currentUser?.isSpectator && (
-          <div className="lg:col-span-1">
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 sticky top-8 transition-colors duration-200">
+          <div className="lg:col-span-1 h-full">
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 h-full flex flex-col transition-colors duration-200">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">{t("pick_your_card")}</h2>
 
               <div className="grid grid-cols-3 gap-3">
