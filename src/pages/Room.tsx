@@ -1,7 +1,7 @@
-import { useEffect, useState, FormEvent, useCallback } from "react";
+import { useEffect, useState, FormEvent, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { Copy, Users, Eye, RotateCcw, LogOut, EyeOff } from "lucide-react";
+import { Copy, Users, Eye, RotateCcw, LogOut, EyeOff, Bot, Smile } from "lucide-react";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
 import { RealtimeChannel } from "@supabase/supabase-js";
@@ -32,10 +32,13 @@ export default function Room() {
   const [isSpectator, setIsSpectator] = useState(localStorage.getItem("poker_is_spectator") === "true");
   const [hasJoined, setHasJoined] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const userNameRef = useRef(userName);
+  const isSpectatorRef = useRef(isSpectator);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [channel, setChannel] = useState<RealtimeChannel | null>(null);
+  const voteRef = useRef<string | null>(null);
 
   const updateRoomFromPresence = useCallback((presenceState: any) => {
     const users: User[] = Object.values(presenceState)
@@ -95,9 +98,22 @@ export default function Room() {
           startCountdown();
         }
       })
-      .on("broadcast", { event: "reset" }, () => {
+      .on("broadcast", { event: "reset" }, async () => {
+        voteRef.current = null;
         setRoom((prev) => prev ? { ...prev, status: "voting" } : null);
-        // Vote reset is handled by presence update in 'handleReset'
+        
+        // Each user must reset their own vote in the presence state
+        const state = currentChannel.presenceState();
+        const isFirst = Object.keys(state).length === 0 || (state[roomId!]?.[0] as any)?.isCreator;
+        const roomName = (state[roomId!]?.[0] as any)?.roomName || "Planning Poker";
+
+        await currentChannel.track({
+          name: userNameRef.current,
+          isSpectator: isSpectatorRef.current,
+          isCreator: !!isFirst,
+          vote: null,
+          roomName,
+        });
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
@@ -116,7 +132,7 @@ export default function Room() {
     return () => {
       currentChannel.unsubscribe();
     };
-  }, [roomId, t]);
+  }, [roomId]);
 
   const startCountdown = () => {
     setCountdown(3);
@@ -141,11 +157,13 @@ export default function Room() {
       name,
       isSpectator: spectator,
       isCreator: isFirst,
-      vote: null,
+      vote: voteRef.current,
       roomName,
     });
 
     setHasJoined(true);
+    userNameRef.current = name;
+    isSpectatorRef.current = spectator;
     localStorage.setItem("poker_user_name", name);
     localStorage.setItem("poker_is_spectator", spectator ? "true" : "false");
   };
@@ -167,6 +185,7 @@ export default function Room() {
         vote: vote,
         roomName: room.name
       });
+      voteRef.current = vote;
     }
   };
 
@@ -209,6 +228,7 @@ export default function Room() {
       });
 
       setRoom(prev => prev ? { ...prev, status: "voting" } : null);
+      voteRef.current = null;
     }
   };
 
@@ -307,6 +327,25 @@ export default function Room() {
     }
   }
 
+  // Calculate vote distribution and agreement
+  const voteDistribution = votingUsers.reduce((acc, user) => {
+    if (user.vote !== null) {
+      acc[user.vote] = (acc[user.vote] || 0) + 1;
+    }
+    return acc;
+  }, {} as Record<string, number>);
+
+  const sortedVotes = Object.keys(voteDistribution).sort((a, b) => {
+    const aIdx = FIBONACCI.indexOf(a);
+    const bIdx = FIBONACCI.indexOf(b);
+    return aIdx - bIdx;
+  });
+
+  const voteCountValues = Object.values(voteDistribution) as number[];
+  const totalVotesCount = voteCountValues.reduce((sum: number, count: number) => sum + count, 0);
+  const maxVoteCount = Math.max(...voteCountValues, 0);
+  const agreementPercentage = totalVotesCount > 0 ? (maxVoteCount / totalVotesCount) * 100 : 0;
+
   return (
     <div className="max-w-5xl mx-auto space-y-8">
       {/* Header */}
@@ -389,71 +428,151 @@ export default function Room() {
 
             {/* Poker Table Visualization */}
             <div className="flex-1 relative flex items-center justify-center py-12">
-              <div className="absolute inset-0 bg-slate-50 dark:bg-slate-900 rounded-full border-4 border-slate-200 dark:border-slate-700 w-full max-w-md mx-auto aspect-[2/1] sm:aspect-auto sm:h-64 top-1/2 -translate-y-1/2 flex items-center justify-center transition-colors duration-200">
-                {room.status === "revealed" && average > 0 && (
-                  <div className="text-center">
-                    <div className="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">{t("average")}</div>
-                    <div className="text-5xl font-bold text-indigo-600 dark:text-indigo-400">{average.toFixed(1).replace(/\.0$/, '')}</div>
+              {room.status === "revealed" ? (
+                <div className="w-full flex flex-col md:flex-row items-center justify-around gap-8 md:gap-4 animate-in fade-in zoom-in duration-500">
+                  {/* Bar Chart Section */}
+                  <div className="flex items-end justify-center gap-4 flex-wrap">
+                    {sortedVotes.map((voteValue) => {
+                      const count = voteDistribution[voteValue];
+                      const heightPercentage = (count / totalVotesCount) * 100;
+                      return (
+                        <div key={voteValue} className="flex flex-col items-center group">
+                          {/* Bar */}
+                          <div className="w-3 h-32 bg-slate-100 dark:bg-slate-700/50 rounded-full relative overflow-hidden mb-3">
+                            <div 
+                              className="absolute bottom-0 left-0 right-0 bg-indigo-500 dark:bg-indigo-400 rounded-full transition-all duration-1000 ease-out"
+                              style={{ height: `${heightPercentage}%` }}
+                            />
+                          </div>
+                          {/* Card shape */}
+                          <div className="w-10 h-14 sm:w-12 sm:h-16 rounded-xl border-2 border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 font-bold text-xl shadow-sm mb-2 group-hover:scale-110 transition-transform">
+                            {voteValue}
+                          </div>
+                          {/* Vote count */}
+                          <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">
+                            {count} {count === 1 ? t("vote_one") : t("vote_other")}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-                {room.status === "revealing" && countdown !== null && (
-                  <div className="text-center animate-pulse">
-                    <div className="text-6xl font-bold text-indigo-600 dark:text-indigo-400">{countdown}</div>
-                  </div>
-                )}
-                {room.status === "voting" && (
-                  <div className="text-slate-400 dark:text-slate-500 font-medium">
-                    {t("voting_in_progress")}
-                  </div>
-                )}
-              </div>
 
-              {/* Users around table */}
-              <div className="relative w-full h-full min-h-[300px]">
-                {votingUsers.map((user, index) => {
-                  const totalUsers = votingUsers.length;
-                  // Distribute users in an ellipse
-                  const angle = totalUsers > 0 ? (index / totalUsers) * 2 * Math.PI - Math.PI / 2 : 0;
-                  const radiusX = 45; // percentage
-                  const radiusY = 40; // percentage
-
-                  const left = `calc(50% + ${Math.cos(angle) * radiusX}%)`;
-                  const top = `calc(50% + ${Math.sin(angle) * radiusY}%)`;
-
-                  return (
-                    <div
-                      key={user.id}
-                      className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2"
-                      style={{ left, top }}
-                    >
-                      <div className={clsx(
-                        "w-12 h-16 sm:w-16 sm:h-24 rounded-lg border-2 flex items-center justify-center shadow-sm transition-all duration-500",
-                        room.status === "revealed"
-                          ? "bg-white dark:bg-slate-800 border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-400"
-                          : room.status === "revealing" && user.vote
-                            ? "bg-indigo-600 border-indigo-700 text-white animate-pulse"
-                            : user.vote
-                              ? "bg-indigo-600 border-indigo-700 text-white"
-                              : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 border-dashed text-slate-400 dark:text-slate-500"
-                      )}>
-                        {room.status === "revealed" ? (
-                          <span className="text-xl sm:text-2xl font-bold">{user.vote || "-"}</span>
-                        ) : room.status === "revealing" && user.vote ? (
-                          <span className="text-2xl">✓</span>
-                        ) : user.vote ? (
-                          <span className="text-2xl">✓</span>
-                        ) : (
-                          <span className="text-sm">...</span>
-                        )}
-                      </div>
-                      <div className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 truncate max-w-[150px] text-center bg-white/80 dark:bg-slate-800/80 px-2 py-1 rounded-md backdrop-blur-sm">
-                        {user.name}
-                        {user.id === currentUser?.id && ` (${t("you")})`}
+                  {/* Summary Stats Section */}
+                  <div className="flex flex-row md:flex-col items-center md:items-start gap-8 md:gap-6 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-700/50 pt-8 md:pt-0 md:pl-8">
+                    {/* Average Label */}
+                    <div className="text-center md:text-left">
+                      <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{t("average")}</div>
+                      <div className="text-4xl font-black text-slate-900 dark:text-white leading-none">
+                        {average > 0 ? average.toFixed(1).replace(/\.0$/, '') : "-"}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+
+                    {/* Agreement Section */}
+                    <div className="text-center md:text-left">
+                      <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">{t("agreement")}</div>
+                      <div className="relative inline-flex items-center justify-center">
+                        {/* Progress circle SVG */}
+                        <svg className="w-20 h-20 sm:w-24 sm:h-24 transform -rotate-90" viewBox="0 0 96 96">
+                          <circle
+                            cx="48"
+                            cy="48"
+                            r="38"
+                            stroke="currentColor"
+                            strokeWidth="6"
+                            fill="transparent"
+                            className="text-slate-100 dark:text-slate-700/50"
+                          />
+                          <circle
+                            cx="48"
+                            cy="48"
+                            r="38"
+                            stroke="currentColor"
+                            strokeWidth="6"
+                            strokeDasharray={2 * Math.PI * 38}
+                            strokeDashoffset={2 * Math.PI * 38 * (1 - agreementPercentage / 100)}
+                            strokeLinecap="round"
+                            fill="transparent"
+                            className={clsx(
+                              "transition-all duration-1000 ease-out",
+                              agreementPercentage === 100 ? "text-emerald-500" : "text-indigo-500"
+                            )}
+                          />
+                        </svg>
+                        {/* Icon in center */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          {agreementPercentage === 100 ? (
+                            <Smile className="w-8 h-8 sm:w-10 sm:h-10 text-emerald-500 animate-pulse" />
+                          ) : (
+                            <Bot className="w-8 h-8 sm:w-10 sm:h-10 text-slate-400" />
+                          )}
+                        </div>
+                      </div>
+                      {agreementPercentage === 100 && (
+                        <div className="text-[10px] font-black text-emerald-500 uppercase mt-2 tracking-tighter text-center md:text-left">
+                          {t("total_coherence")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="absolute inset-0 bg-slate-50 dark:bg-slate-900 rounded-full border-4 border-slate-200 dark:border-slate-700 w-full max-w-md mx-auto aspect-[2/1] sm:aspect-auto sm:h-64 top-1/2 -translate-y-1/2 flex items-center justify-center transition-colors duration-200">
+                    {room.status === "revealing" && countdown !== null && (
+                      <div className="text-center animate-pulse">
+                        <div className="text-6xl font-bold text-indigo-600 dark:text-indigo-400">{countdown}</div>
+                      </div>
+                    )}
+                    {room.status === "voting" && (
+                      <div className="text-slate-400 dark:text-slate-500 font-medium">
+                        {t("voting_in_progress")}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Users around table */}
+                  <div className="relative w-full h-full min-h-[300px]">
+                    {votingUsers.map((user, index) => {
+                      const totalUsers = votingUsers.length;
+                      const angle = totalUsers > 0 ? (index / totalUsers) * 2 * Math.PI - Math.PI / 2 : 0;
+                      const radiusX = 45;
+                      const radiusY = 40;
+
+                      const left = `calc(50% + ${Math.cos(angle) * radiusX}%)`;
+                      const top = `calc(50% + ${Math.sin(angle) * radiusY}%)`;
+
+                      return (
+                        <div
+                          key={user.id}
+                          className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2"
+                          style={{ left, top }}
+                        >
+                          <div className={clsx(
+                            "w-12 h-16 sm:w-16 sm:h-24 rounded-lg border-2 flex items-center justify-center shadow-sm transition-all duration-500",
+                            room.status === "revealing" && user.vote
+                              ? "bg-indigo-600 border-indigo-700 text-white animate-pulse"
+                              : user.vote
+                                ? "bg-indigo-600 border-indigo-700 text-white"
+                                : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 border-dashed text-slate-400 dark:text-slate-500"
+                          )}>
+                            {room.status === "revealing" && user.vote ? (
+                              <span className="text-2xl">✓</span>
+                            ) : user.vote ? (
+                              <span className="text-2xl">✓</span>
+                            ) : (
+                              <span className="text-sm">...</span>
+                            )}
+                          </div>
+                          <div className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 truncate max-w-[150px] text-center bg-white/80 dark:bg-slate-800/80 px-2 py-1 rounded-md backdrop-blur-sm">
+                            {user.name}
+                            {user.id === currentUser?.id && ` (${t("you")})`}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Spectators List */}

@@ -34,7 +34,11 @@ const resources = {
       spectator_other: "spectators",
       leave_game: "Leave Game",
       toggle_language: "Toggle Language",
-      toggle_theme: "Toggle Theme"
+      toggle_theme: "Toggle Theme",
+      agreement: "Agreement",
+      vote_one: "vote",
+      vote_other: "votes",
+      total_coherence: "Total coherence"
     }
   },
   pt: {
@@ -69,7 +73,11 @@ const resources = {
       spectator_other: "espectadores",
       leave_game: "Sair do Jogo",
       toggle_language: "Mudar Idioma",
-      toggle_theme: "Mudar Tema"
+      toggle_theme: "Mudar Tema",
+      agreement: "Concordância",
+      vote_one: "voto",
+      vote_other: "votos",
+      total_coherence: "Concordância total"
     }
   }
 };
