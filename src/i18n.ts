@@ -4,7 +4,7 @@ import { initReactI18next } from 'react-i18next';
 const resources = {
   en: {
     translation: {
-      app_title: "Planning Poker",
+      app_title: "TecPlanning",
       create_room: "Create Game",
       room_name: "Game Name",
       your_name: "Your Name",
@@ -43,7 +43,7 @@ const resources = {
   },
   pt: {
     translation: {
-      app_title: "Planning Poker",
+      app_title: "TecPlanning",
       create_room: "Criar Jogo",
       room_name: "Nome do Jogo",
       your_name: "Seu Nome",
